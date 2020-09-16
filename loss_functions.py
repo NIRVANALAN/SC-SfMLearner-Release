@@ -1,11 +1,11 @@
-from __future__ import division
 import torch
 from torch import nn
 import torch.nn.functional as F
 from inverse_warp import inverse_warp2, inverse_warp
 import math
 
-device = torch.device("cuda") if torch.cuda.is_available() else torch.device("cpu")
+device = torch.device(
+    "cuda") if torch.cuda.is_available() else torch.device("cpu")
 
 
 class SSIM(nn.Module):
@@ -37,7 +37,8 @@ class SSIM(nn.Module):
         sigma_xy = self.sig_xy_pool(x * y) - mu_x * mu_y
 
         SSIM_n = (2 * mu_x * mu_y + self.C1) * (2 * sigma_xy + self.C2)
-        SSIM_d = (mu_x ** 2 + mu_y ** 2 + self.C1) * (sigma_x + sigma_y + self.C2)
+        SSIM_d = (mu_x ** 2 + mu_y ** 2 + self.C1) * \
+            (sigma_x + sigma_y + self.C2)
 
         return torch.clamp((1 - SSIM_n / SSIM_d) / 2, 0, 1)
 
@@ -78,8 +79,10 @@ def compute_photo_and_geometry_loss(tgt_img, ref_imgs, intrinsics, tgt_depth, re
                 tgt_depth_scaled = tgt_depth[s]
                 ref_depth_scaled = ref_depth[s]
             else:
-                tgt_depth_scaled = F.interpolate(tgt_depth[s], (h, w), mode='nearest')
-                ref_depth_scaled = F.interpolate(ref_depth[s], (h, w), mode='nearest')
+                tgt_depth_scaled = F.interpolate(
+                    tgt_depth[s], (h, w), mode='nearest')
+                ref_depth_scaled = F.interpolate(
+                    ref_depth[s], (h, w), mode='nearest')
 
             photo_loss1, geometry_loss1 = compute_pairwise_loss(tgt_img_scaled, ref_img_scaled, tgt_depth_scaled, ref_depth_scaled, pose,
                                                                 intrinsic_scaled, with_ssim, with_mask, with_auto_mask, padding_mode)
@@ -94,14 +97,17 @@ def compute_photo_and_geometry_loss(tgt_img, ref_imgs, intrinsics, tgt_depth, re
 
 def compute_pairwise_loss(tgt_img, ref_img, tgt_depth, ref_depth, pose, intrinsic, with_ssim, with_mask, with_auto_mask, padding_mode):
 
-    ref_img_warped, valid_mask, projected_depth, computed_depth = inverse_warp2(ref_img, tgt_depth, ref_depth, pose, intrinsic, padding_mode)
+    ref_img_warped, valid_mask, projected_depth, computed_depth = inverse_warp2(
+        ref_img, tgt_depth, ref_depth, pose, intrinsic, padding_mode)
 
     diff_img = (tgt_img - ref_img_warped).abs().clamp(0, 1)
 
-    diff_depth = ((computed_depth - projected_depth).abs() / (computed_depth + projected_depth)).clamp(0, 1)
+    diff_depth = ((computed_depth - projected_depth).abs() /
+                  (computed_depth + projected_depth)).clamp(0, 1)
 
     if with_auto_mask == True:
-        auto_mask = (diff_img.mean(dim=1, keepdim=True) < (tgt_img - ref_img).abs().mean(dim=1, keepdim=True)).float() * valid_mask
+        auto_mask = (diff_img.mean(dim=1, keepdim=True) < (
+            tgt_img - ref_img).abs().mean(dim=1, keepdim=True)).float() * valid_mask
         valid_mask = auto_mask
 
     if with_ssim == True:
@@ -143,8 +149,10 @@ def compute_smooth_loss(tgt_depth, tgt_img, ref_depths, ref_imgs):
         grad_disp_x = torch.abs(disp[:, :, :, :-1] - disp[:, :, :, 1:])
         grad_disp_y = torch.abs(disp[:, :, :-1, :] - disp[:, :, 1:, :])
 
-        grad_img_x = torch.mean(torch.abs(img[:, :, :, :-1] - img[:, :, :, 1:]), 1, keepdim=True)
-        grad_img_y = torch.mean(torch.abs(img[:, :, :-1, :] - img[:, :, 1:, :]), 1, keepdim=True)
+        grad_img_x = torch.mean(
+            torch.abs(img[:, :, :, :-1] - img[:, :, :, 1:]), 1, keepdim=True)
+        grad_img_y = torch.mean(
+            torch.abs(img[:, :, :-1, :] - img[:, :, 1:, :]), 1, keepdim=True)
 
         grad_disp_x *= torch.exp(-grad_img_x)
         grad_disp_y *= torch.exp(-grad_img_y)
@@ -190,7 +198,8 @@ def compute_errors(gt, pred, dataset):
         valid_gt = current_gt[valid]
         valid_pred = current_pred[valid].clamp(1e-3, max_depth)
 
-        valid_pred = valid_pred * torch.median(valid_gt)/torch.median(valid_pred)
+        valid_pred = valid_pred * \
+            torch.median(valid_gt)/torch.median(valid_pred)
 
         thresh = torch.max((valid_gt / valid_pred), (valid_pred / valid_gt))
         a1 += (thresh < 1.25).float().mean()
@@ -203,4 +212,3 @@ def compute_errors(gt, pred, dataset):
         sq_rel += torch.mean(((valid_gt - valid_pred)**2) / valid_gt)
 
     return [metric.item() / batch_size for metric in [abs_diff, abs_rel, sq_rel, a1, a2, a3]]
-

@@ -1,4 +1,4 @@
-DATA_ROOT=/media/bjw/Disk
+DATA_ROOT=~
 TRAIN_SET=$DATA_ROOT/Dataset/kitti_256/
 python train.py $TRAIN_SET \
 --resnet-layers 18 \

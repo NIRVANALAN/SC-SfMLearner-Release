@@ -56,7 +56,7 @@ class PoseResNet(nn.Module):
     def __init__(self, num_layers = 18, pretrained = True):
         super(PoseResNet, self).__init__()
         self.encoder = ResnetEncoder(num_layers = num_layers, pretrained = pretrained, num_input_images=2)
-        self.decoder = PoseDecoder(self.encoder.num_ch_enc)
+        self.decoder = PoseDecoder(self.encoder.num_ch_enc)  # TODO
 
     def init_weights(self):
         pass

@@ -6,8 +6,6 @@ import torch.nn as nn
 import torch.nn.functional as F
 from .resnet_encoder import *
 
-
-import numpy as np
 from collections import OrderedDict
 
 class ConvBlock(nn.Module):
