@@ -1,0 +1,9 @@
+697 files to test
+Avg Time:  0.009090974306957622  seconds.
+Avg Speed:  109.99921089147365  fps
+==> Evaluating depth result...
+ Scaling ratios | med: 29.605 | std: 0.086
+ Scaling ratios | mean: 29.646 +- std: 2.545
+
+   abs_rel |   sq_rel |     rmse | rmse_log |       a1 |       a2 |       a3 | 
+&   0.117  &   0.871  &   4.815  &   0.193  &   0.869  &   0.959  &   0.982  \\

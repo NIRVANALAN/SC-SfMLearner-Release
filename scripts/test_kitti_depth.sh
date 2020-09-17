@@ -1,7 +1,7 @@
-DISP_NET=checkpoints/resnet18_depth_256/dispnet_model_best.pth.tar
+DISP_NET=checkpoints/resnet18_depth_256/09-14-17:55/dispnet_model_best.pth.tar
 # DISP_NET=checkpoints/resnet50_depth_256/dispnet_model_best.pth.tar
 
-DATA_ROOT=/media/bjw/Disk/Dataset/kitti_depth_test
+DATA_ROOT=~/Dataset/kitti_depth_test
 RESULTS_DIR=results/test
 
 # test
