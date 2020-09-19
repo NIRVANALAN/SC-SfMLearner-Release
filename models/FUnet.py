@@ -21,16 +21,17 @@ class FusionUNet(nn.Module):
             tuple, list] and len(up_conv1_outplanes) == 5
 
         # * constructin UNET, from innermost to outermost
+        # * inner most layer
         unet_block = UNetBlock(down_conv1_in=ngf*8, down_conv2_in=ngf*8,
-                               up_conv1_in=self.up_conv1_inplanes[4], up_conv1_out=self.up_conv1_outplanes[4], up_conv2_out=256, innermost=True, deepBlender=deepBlender)  # * inner most layer
+                               up_conv1_in=self.up_conv1_inplanes[4], up_conv1_out=self.up_conv1_outplanes[4], up_conv2_out=256, innermost=True, deepBlender=deepBlender)
         unet_block = UNetBlock(down_conv1_in=ngf*4, down_conv2_in=ngf*8,
                                up_conv1_in=self.up_conv1_inplanes[3], up_conv1_out=self.up_conv1_outplanes[3], up_conv2_out=256, submodule=unet_block, deepBlender=deepBlender)
         unet_block = UNetBlock(down_conv1_in=ngf*2, down_conv2_in=ngf*4,
                                up_conv1_in=self.up_conv1_inplanes[2], up_conv1_out=self.up_conv1_outplanes[2], up_conv2_out=256, submodule=unet_block, deepBlender=deepBlender)
         unet_block = UNetBlock(down_conv1_in=ngf, down_conv2_in=ngf*2,
                                up_conv1_in=self.up_conv1_inplanes[1], up_conv1_out=self.up_conv1_outplanes[1], up_conv2_out=64 if not deepBlender else 128, submodule=unet_block, deepBlender=deepBlender)
-        self.model = UNetBlock(down_conv1_in=inputf, down_conv2_in=ngf,
-                               up_conv1_in=self.up_conv1_inplanes[0], up_conv1_out=self.up_conv1_outplanes[0], up_conv2_out=32, submodule=unet_block, deepBlender=deepBlender)  # * outer most
+        self.model = UNetBlock(down_conv1_in=inputf, down_conv2_in=ngf,  # * outer most
+                               up_conv1_in=self.up_conv1_inplanes[0], up_conv1_out=self.up_conv1_outplanes[0], up_conv2_out=32, submodule=unet_block, deepBlender=deepBlender)
 
         self.finalConv1 = nn.Conv2d(
             160 if deepBlender else 96, 32, kernel_size=3, stride=1, padding=1)

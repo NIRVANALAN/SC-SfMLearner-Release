@@ -7,6 +7,35 @@ import math
 device = torch.device(
     "cuda") if torch.cuda.is_available() else torch.device("cpu")
 
+#TODO
+
+
+def compute_invariant_relative_gradient():
+    pass
+
+
+def compute_depth_reconstruction_loss():  # Lg
+    pass
+
+
+def compute_scale_consistent_loss():  # Ll, scale invariant depth gradient
+    pass
+
+
+def compute_scene_flow_loss():  # Ls, 3D scene motion
+    pass
+
+
+def compute_laplacian_loss():  # Le
+    pass
+
+
+# DeepBlender reconstruction, L1 loss
+def compute_reconstruciton_loss(pred_residual, gt):
+    return nn.functional.l1_loss(pred_residual, gt, reduce='mean')
+
+# GAN Loss
+
 
 class SSIM(nn.Module):
     """Layer to compute the SSIM loss between a pair of images
