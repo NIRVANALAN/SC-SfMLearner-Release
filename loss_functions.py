@@ -1,3 +1,4 @@
+from functools import reduce
 import torch
 from torch import nn
 import torch.nn.functional as F
@@ -7,30 +8,87 @@ import math
 device = torch.device(
     "cuda") if torch.cuda.is_available() else torch.device("cpu")
 
-#TODO
+# TODO
 
 
-def compute_invariant_relative_gradient():
+# TODO
+def depth_relative_gradient(pred_map, mask, scale=[pow(x, 2) for x in (0, 1, 2, 3, 4)]):
+    if type(scale) not in (tuple, list):
+        scale = [scale]
+    depth_gradient = []
+    for n_scale in scale:
+        dx, dy = gradient(pred_map, n_scale, normalization=True)
+        depth_gradient.append((dx, dy))
     pass
 
 
-def compute_depth_reconstruction_loss():  # Lg
-    pass
+# Lg reconstruction loss, for DMV
+def compute_depth_reconstruction_loss(pred_map, dmv, mask):
+    static_mask = 1-mask
+    pred_map *= static_mask
+    dmv *= static_mask
+    return nn.functional.l1_loss(pred_map, dmv)
 
 
-def compute_scale_consistent_loss():  # Ll, scale invariant depth gradient
-    pass
+def gradient(pred, step=1, normalization=False):  # !
+    # compute gradients of predicion map 
+    assert type(pred) is torch.Tensor and pred.ndim() == 4
+    assert type(step) is int and step >= 1 and step <= pred.shape[-1]
+    # [N,C,Y,X] gradient in increasing direction
+    x1, x2, y1,y2 = pred[:, :, :, 1:-1:step], pred[:, :, :, 0:-1:step], pred[:, :, 1:-1:step] , pred[:, :, :-1:step]
+    if(normalization):
+            D_dx = (x1-x2)/(x1.abs()+x2.abs())
+            D_dy = (y1-y2)/(y1.abs()+y2.abs())
+    else:
+            D_dx = (x1-x2)
+            D_dy = (y1-y2)
+    return D_dx, D_dy
+
+# Ll, scale invariant depth gradient
+def compute_scale_consistent_loss(pred_map, dsv, mask):
+    pred_map *= mask
+    dsv *= mask
+    return nn.functional.l1_loss(depth_relative_gradient(pred_map), depth_relative_gradient(dsv))
 
 
 def compute_scene_flow_loss():  # Ls, 3D scene motion
     pass
 
 
-def compute_laplacian_loss():  # Le
-    pass
 
+# Le loss
+def compute_laplacian_regularization(pred_map, mask=None, mask_weight=1, ):
+    # laplacian operator calculated unmixed second order derivatives
+    assert mask is None or mask.shape == pred_map.shape[-2:]
+    loss = 0.
+    pred_map *= mask
+    dx, dy = gradient(pred_map)
+    dx2, _ = gradient(dx)
+    _, dy2 = gradient(dy)
+    loss += torch.sum(map(lambda x: x.square().mean(),
+                          [dx2, dy2]))
+    return loss * mask_weight
+
+
+def smooth_loss(pred_map):  # from SfmLearner-Pytorch
+    if type(pred_map) not in [tuple, list]:
+        pred_map = [pred_map]
+
+    loss = 0
+    weight = 1.
+
+    for scaled_map in pred_map:
+        dx, dy = gradient(scaled_map)
+        dx2, dxdy = gradient(dx)
+        dydx, dy2 = gradient(dy)
+        loss += (dx2.abs().mean() + dxdy.abs().mean() +
+                 dydx.abs().mean() + dy2.abs().mean())*weight
+        weight /= 2.3  # don't ask me why it works better
+    return loss
 
 # DeepBlender reconstruction, L1 loss
+
+
 def compute_reconstruciton_loss(pred_residual, gt):
     return nn.functional.l1_loss(pred_residual, gt, reduce='mean')
 
