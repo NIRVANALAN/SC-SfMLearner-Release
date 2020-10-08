@@ -6,19 +6,23 @@ Author: Zhaoyang Lv
 """
 
 import os
+from posix import listdir
 from numpy.lib.twodim_base import mask_indices
+from torch._C import dtype
 import torch.utils.data as data
-import os.path as osp
 import numpy as np
 import re
 from pathlib import Path, PosixPath
 
 from imageio import imread
+from PIL import Image
+import pickle
+import cv2
 
 
 class RefreshDataset(data.Dataset):
 
-    def __init__(self, root_dir='/mnt/lustre/yslan/Dataset/office2/'):
+    def __init__(self, list_dir, root_dir='/mnt/lustre/yslan/Dataset/REFRESH/office2/'):
         """
         :param the directory of color images
         :param the directory of depth images
@@ -30,33 +34,67 @@ class RefreshDataset(data.Dataset):
         # please ensure the four folders use the same number of synchronized files
         # self.ids = len(dmv_files) - 1
         self.corpus = []
-        with open(root_dir / 'office2.txt', 'r') as f:
+        with open(root_dir / list_dir, 'r') as f:
             sub_frames = f.readlines()
             for frame in sub_frames:
                 frame_dir = Path(frame.rstrip())
-                image_ids = sorted((frame_dir / 'images').glob('*.png'))
-                for idx in image_ids:
-                    idx = idx.stem
+                with open(frame_dir / 'info.pkl', 'rb') as p:
+                    # the original pickle is in python2
+                    info = pickle.load(p, encoding='latin1')
+                    pose = info['pose']
+                    calib = info['calib']
+                    intrinsics = calib['depth_intrinsic']
+                image_ids = sorted((frame_dir / 'raw_color').glob('*.png'))
+                for id in range(len(image_ids)-1):  # up flow
+                    idx = image_ids[id].stem
+                    next_idx = image_ids[id+1].stem
                     self.corpus.append([
-                        frame_dir / 'depth_est' / (idx+'.pfm'),
-                        frame_dir / 'estimated_mono_depth' / (idx+'.pfm'),
-                        frame_dir / 'flow' / (idx+'.flo'),
-                        frame_dir / 'depth' / (idx+'.png'),
+                        (
+                            frame_dir / 'raw_color' / (idx+'.png'),
+                            frame_dir / 'depth_est' / (idx+'.pfm'),
+                            frame_dir / 'estimated_mono_depth' / (idx+'.pfm'),
+                            frame_dir / 'depth' / (idx+'.png'),
+                            pose[id],
+                        ),
+                        (
+                            frame_dir / 'raw_color' / (next_idx+'.png'),
+                            frame_dir / 'depth_est' / (next_idx+'.pfm'),
+                            frame_dir / 'estimated_mono_depth' /
+                            (next_idx+'.pfm'),
+                            frame_dir / 'depth' / (next_idx+'.png'),
+                            pose[id+1],
+                        ),
+                        frame_dir / 'flow' / (idx+'.flo'),  # flow from 1->2
+                        np.linalg.inv(intrinsics),
                     ])
 
     def __getitem__(self, index):
-        dsv_path, dmv_path, flow_path, depth_path = self.corpus[index]
-        dsv, dmv, depth = (self._load_depth_tensor(p)
-                           for p in (dsv_path, dmv_path, depth_path))
-        flow = readFlow(flow_path)
-        return dsv, dmv, flow, depth
+        frame_1, frmae_2, flow, inv_intrinsics = self.corpus[index]
+        frame_1, frmae_2 = (self._load_frame_info(frame)
+                            for frame in (frame_1, frmae_2))
+        flow = readFlow(flow)
+        return frame_1, frmae_2, flow, inv_intrinsics
 
     def __len__(self):
         return len(self.corpus)
 
+    def _load_frame_info(self, frame, cat_img_depth=True):
+        raw, dmv, dsv, depth, extrinsic = frame
+        raw = self._load_rgb_tensor(raw)
+        dsv, dmv, depth = (self._load_depth_tensor(p)
+                           for p in (dsv, dmv, depth))
+        _, H, W = raw.shape  # image shape
+        dmv = cv2.resize(dmv.transpose(1, 2, 0), (W, H))[
+            np.newaxis, :, :]  # TODO
+        dsv, dmv = (np.concatenate([raw, d], axis=0) for d in (dsv, dmv))
+        return dsv, dmv,  depth, extrinsic
+
     def _load_rgb_tensor(self, path):
-        image = imread(path)
-        image = image.astype(np.float32) / 255.0
+        # image = cv2.imread(path, 1)
+        # image = cv2.cvtColor(image, cv2.COLOR_BGR2RGB) / 255.0
+        image = cv2.imread(str(path), cv2.IMREAD_COLOR)
+        # image = Image.open(path).convert('RGB')
+        image = np.asarray(image) / 255.0
         image = np.transpose(image, (2, 0, 1))
         return image
 
@@ -73,6 +111,16 @@ class RefreshDataset(data.Dataset):
         else:
             raise NotImplementedError
         return depth[np.newaxis, :]
+
+
+def pose_to_extrinsics(pose_matrix):
+    import numpy as np
+    rotation_trans = np.transpose(pose_matrix[:3, :3])
+    translation_ext = -rotation_trans@pose_matrix[:3, -1:]
+    ext_matrix = np.copy(pose_matrix)
+    new_trans = np.concatenate([rotation_trans, translation_ext], axis=1)
+    ext_matrix[:3, :] = new_trans
+    return ext_matrix
 
 
 def dpt_depth_read(filename):
@@ -153,6 +201,6 @@ def readFlow(fn):
 
 
 if __name__ == "__main__":
-    dataset = RefreshDataset()
+    dataset = RefreshDataset(list_dir='train.txt')
     print(len(dataset))
-    print([x.shape for x in dataset[100]])
+    print([type(x) for x in dataset[100]])

@@ -18,7 +18,7 @@ class Compose(object):
         return images, intrinsics
 
 
-class Normalize(object):
+class Normalize(object):  # !
     def __init__(self, mean, std):
         self.mean = mean
         self.std = std
@@ -28,6 +28,34 @@ class Normalize(object):
             for t, m, s in zip(tensor, self.mean, self.std):
                 t.sub_(m).div_(s)
         return images, intrinsics
+
+
+class Normalize2(object):  # !
+    def __init__(self, mean, std):
+        mean, std = (np.array(i) for i in (mean, std))
+        if mean.ndim == 1:
+            mean = mean[:, None, None]
+        if std.ndim == 1:
+            std = std[:, None, None]
+        self.mean = mean
+        self.std = std
+
+    def __call__(self, tensor):
+        tensor.__sub__(self.mean).__truediv__(self.std)
+        return tensor
+
+
+class ArrayToTensor2(object):
+    """Converts a list of numpy.ndarray (H x W x C) along with a intrinsics matrix to a list of torch.FloatTensor of shape (C x H x W) with a intrinsics tensor."""
+
+    def __call__(self, *inputs):
+        tensors = []
+        for i in inputs:
+            # put it from HWC to CHW format
+            # im = np.transpose(im, (2, 0, 1))
+            # handle numpy array
+            tensors.append(torch.from_numpy(i).float())
+        return tensors
 
 
 class ArrayToTensor(object):
@@ -43,7 +71,7 @@ class ArrayToTensor(object):
         return tensors, intrinsics
 
 
-class RandomHorizontalFlip(object):
+class RandomHorizontalFlip(object):  # TODO
     """Randomly horizontally flips the given numpy array with a probability of 0.5"""
 
     def __call__(self, images, intrinsics):
@@ -72,11 +100,13 @@ class RandomScaleCrop(object):
 
         output_intrinsics[0] *= x_scaling
         output_intrinsics[1] *= y_scaling
-        scaled_images = [np.array(Image.fromarray(im.astype(np.uint8)).resize((scaled_w, scaled_h))).astype(np.float32) for im in images]
+        scaled_images = [np.array(Image.fromarray(im.astype(np.uint8)).resize(
+            (scaled_w, scaled_h))).astype(np.float32) for im in images]
 
         offset_y = np.random.randint(scaled_h - in_h + 1)
         offset_x = np.random.randint(scaled_w - in_w + 1)
-        cropped_images = [im[offset_y:offset_y + in_h, offset_x:offset_x + in_w] for im in scaled_images]
+        cropped_images = [im[offset_y:offset_y + in_h,
+                             offset_x:offset_x + in_w] for im in scaled_images]
 
         output_intrinsics[0, 2] -= offset_x
         output_intrinsics[1, 2] -= offset_y

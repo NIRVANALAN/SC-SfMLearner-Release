@@ -1,14 +1,13 @@
 from functools import reduce
 import torch
 from torch import nn
-import torch.nn.functional as F
+# import torch.nn.functional as F
+import torch.nn.functional as tf
 from inverse_warp import inverse_warp2, inverse_warp
 import math
 
 device = torch.device(
     "cuda") if torch.cuda.is_available() else torch.device("cpu")
-
-# TODO
 
 
 # TODO
@@ -19,7 +18,7 @@ def depth_relative_gradient(pred_map, mask, scale=[pow(x, 2) for x in (0, 1, 2, 
     for n_scale in scale:
         dx, dy = gradient(pred_map, n_scale, normalization=True)
         depth_gradient.append((dx, dy))
-    pass
+    return depth_gradient
 
 
 # Lg reconstruction loss, for DMV
@@ -30,47 +29,105 @@ def compute_depth_reconstruction_loss(pred_map, dmv, mask):
     return nn.functional.l1_loss(pred_map, dmv)
 
 
-def gradient(pred, step=1, normalization=False):  # !
-    # compute gradients of predicion map 
+def gradient(pred, step=1, normalization=False, keepdim=True):  # !
+    # compute gradients of predicion map
     assert type(pred) is torch.Tensor and pred.ndim() == 4
     assert type(step) is int and step >= 1 and step <= pred.shape[-1]
     # [N,C,Y,X] gradient in increasing direction
-    x1, x2, y1,y2 = pred[:, :, :, 1:-1:step], pred[:, :, :, 0:-1:step], pred[:, :, 1:-1:step] , pred[:, :, :-1:step]
+    # pad starting from last dimension and moving forward
+    x = tf.pad(pred, (0, step), 'replicate', 1)
+    y = tf.pad(pred, (0, 0, 0, step), 'replicate', 1)  # pad bottom
+
+    x1, x2, y1, y2 = x[:, :, :, :-step], x[:, :,
+                                           :, step:], y[:, :, :-step], y[:, :, step:]
+
     if(normalization):
-            D_dx = (x1-x2)/(x1.abs()+x2.abs())
-            D_dy = (y1-y2)/(y1.abs()+y2.abs())
+        D_dx = (x1-x2)/(x1.abs()+x2.abs())
+        D_dy = (y1-y2)/(y1.abs()+y2.abs())
     else:
-            D_dx = (x1-x2)
-            D_dy = (y1-y2)
+        D_dx = (x1-x2)
+        D_dy = (y1-y2)
     return D_dx, D_dy
 
-# Ll, scale invariant depth gradient
-def compute_scale_consistent_loss(pred_map, dsv, mask):
-    pred_map *= mask
+
+def compute_scale_consistent_loss(Drt, dsv, mask):
+    # Ll, scale invariant depth gradient
+    Drt *= mask
     dsv *= mask
-    return nn.functional.l1_loss(depth_relative_gradient(pred_map), depth_relative_gradient(dsv))
+    Drt_depth_gradients = depth_relative_gradient(Drt)
+    dsv_depth_gradients = depth_relative_gradient(dsv)
+    loss = 0.
+    for i in range(len(Drt)):
+        loss += nn.functional.l1_loss(Drt_depth_gradients[i],
+                                      dsv_depth_gradients[i])
+    return loss / len(Drt)  # FIXME
 
 
-def compute_scene_flow_loss():  # Ls, 3D scene motion
+def compute_target_position(ref_x, Fx):
+    """compute target position of warped ref_x into neighboring_x
+
+    Args:
+        ref_x (Tensor): [description]
+        Fx (Tensor): [optical flow of ref_x -> neighboring_x]
+    """
     pass
 
 
+def compute_scene_flow_loss(tgt_img, ref_imgs, tgt_intrinsicts, ref_intrinsics,
+                            tgt_img_depth, ref_imgs_depth, tgt_pose, ref_poses, rotation_mode='euler', padding_mode='zeros'):  # Ls, 3D scene motion
+    # TODO
+    # l1 loss of unprojected ref_x and neighbour_x
+    # neighbour_x is computed by ref_x + F(ref_x)
+    assert pose.size(1) == len(ref_imgs)
+    scene_flow_loss = 0.
+    b, _, h, w = tgt_img_depth.shape
+    # tgt_img_scaled = F.interpolate(tgt_img, (h, w), mode='area')
+    # ref_imgs_scaled = [F.interpolate(ref_img, (h, w), mode='area') for ref_img in ref_imgs]
+    # intrinsics_scaled = torch.cat((intrinsics[:, 0:2]/downscale, intrinsics[:, 2:]), dim=1)
+
+    tgt_img_warped, tgt_valid_points = inverse_warp(tgt_img, tgt_img_depth, tgt_pose,
+                                                    tgt_intrinsicts, rotation_mode, padding_mode)
+
+    warped_imgs = []
+    diff_maps = []
+
+    for i, ref_img in enumerate(ref_imgs):
+        current_pose = ref_poses[:, i]
+
+        ref_img_warped, valid_points = inverse_warp(ref_img, ref_imgs_depth, current_pose,
+                                                    ref_imgs_depth, rotation_mode, padding_mode)
+        diff = (tgt_img_warped - ref_img_warped) * \
+            \
+            \
+            valid_points.unsqueeze(1).float()
+
+        scene_flow_loss += diff.abs().mean()    # l1
+
+        warped_imgs.append(ref_img_warped[0])
+        diff_maps.append(diff[0])
+
+    return scene_flow_loss
+
+def apply_scene_flow(img, sceneflow):
+    batch_size, _, height, width = img.size()
 
 # Le loss
-def compute_laplacian_regularization(pred_map, mask=None, mask_weight=1, ):
+def compute_laplacian_regularization(pred_map, mask=None, smoothness_weight=1, ):
     # laplacian operator calculated unmixed second order derivatives
     assert mask is None or mask.shape == pred_map.shape[-2:]
-    loss = 0.
     pred_map *= mask
     dx, dy = gradient(pred_map)
     dx2, _ = gradient(dx)
     _, dy2 = gradient(dy)
-    loss += torch.sum(map(lambda x: x.square().mean(),
-                          [dx2, dy2]))
-    return loss * mask_weight
+    # laplacian smoothness
+    return torch.sum(map(lambda x: x.square(), [dx2, dy2])) * smoothness_weight
 
 
 def smooth_loss(pred_map):  # from SfmLearner-Pytorch
+    def gradient(pred):
+        D_dy = pred[:, :, 1:] - pred[:, :, :-1]
+        D_dx = pred[:, :, :, 1:] - pred[:, :, :, :-1]
+        return D_dx, D_dy
     if type(pred_map) not in [tuple, list]:
         pred_map = [pred_map]
 
